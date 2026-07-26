@@ -544,6 +544,7 @@ function initWhoGrid(){
 }
 
 async function login(empId){
+  primeSpeech(); // desbloquea la voz hablada aprovechando este toque
   try{
     state.employee = EMPLOYEES.find(e=>e.id===empId);
     lsSet("cdt_last_emp", empId);
@@ -557,6 +558,18 @@ async function login(empId){
   }catch(err){
     showError("Fallo al entrar: " + err.message);
   }
+}
+
+// Algunos navegadores bloquean la voz hablada hasta que ha habido al menos
+// un toque del usuario en la página. Aprovechamos el toque de "entrar"
+// (elegir el nombre) para reproducir un sonido silencioso y desbloquearla,
+// así luego funciona aunque el micro se active solo, sin más toques.
+function primeSpeech(){
+  try{
+    const u = new SpeechSynthesisUtterance(" ");
+    u.volume = 0;
+    speechSynthesis.speak(u);
+  }catch(e){ /* sin síntesis de voz disponible, no pasa nada */ }
 }
 
 // Si el micro ya se activó alguna vez y el navegador todavía tiene el
