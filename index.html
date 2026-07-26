@@ -1294,6 +1294,28 @@ function supportsMiniMode(){
   return "documentPictureInPicture" in window;
 }
 
+const MINI_VOICE_ICON_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
+
+function hideMainWindow(){
+  if(document.getElementById("mini-overlay")) return;
+  const overlay = document.createElement("div");
+  overlay.id = "mini-overlay";
+  overlay.style.cssText = "position:fixed; inset:0; z-index:99999; background:var(--bg); display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px; text-align:center; padding:24px;";
+  overlay.innerHTML = `
+    <div style="font-size:15px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.08em;">Modo mini activo</div>
+    <div style="font-size:15px; color:var(--text);">Se está mostrando en la ventanita flotante.</div>
+    <button onclick="toggleMiniMode()" style="padding:12px 20px; border-radius:12px; border:none; background:var(--red); color:#fff; font-weight:700; cursor:pointer;">Volver a esta ventana</button>
+  `;
+  document.body.appendChild(overlay);
+  try{ window.blur(); }catch(e){}
+}
+
+function showMainWindow(){
+  const overlay = document.getElementById("mini-overlay");
+  if(overlay) overlay.remove();
+  try{ window.focus(); }catch(e){}
+}
+
 async function toggleMiniMode(){
   if(miniWin){ miniWin.close(); return; }
   if(!supportsMiniMode()){
@@ -1301,7 +1323,7 @@ async function toggleMiniMode(){
     return;
   }
   try{
-    miniWin = await documentPictureInPicture.requestWindow({width: 300, height: 190});
+    miniWin = await documentPictureInPicture.requestWindow({width: 300, height: 210});
   }catch(e){
     showToast("No se pudo abrir el modo mini");
     return;
@@ -1315,20 +1337,25 @@ async function toggleMiniMode(){
   miniWin.document.body.style.margin = "0";
   miniWin.document.body.style.background = "var(--bg)";
   miniWin.document.body.innerHTML = `
-    <div style="padding:14px; font-family:'Space Grotesk',sans-serif; color:var(--text); display:flex; flex-direction:column; gap:8px; height:100%; box-sizing:border-box;">
-      <div style="display:flex; align-items:center; gap:8px;">
-        <span id="mini-dot" style="width:10px; height:10px; border-radius:50%; background:var(--text-dim); flex-shrink:0;"></span>
+    <div style="padding:14px; font-family:'Space Grotesk',sans-serif; color:var(--text); display:flex; flex-direction:column; gap:10px; height:100%; box-sizing:border-box;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button id="mini-voice-btn" class="icon-btn voice-btn" title="Control por voz" style="flex-shrink:0;">
+          ${MINI_VOICE_ICON_SVG}
+        </button>
         <span id="mini-status" style="font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.08em;">Micro apagado</span>
       </div>
-      <div id="mini-task" style="font-size:19px; font-weight:700; line-height:1.2;">Sin actividad</div>
+      <div id="mini-task" style="font-size:19px; font-weight:700; line-height:1.2; text-transform:uppercase; font-family:'Space Grotesk',sans-serif;">Sin actividad</div>
       <div id="mini-timer" style="font-size:34px; font-weight:700; font-family:'Space Grotesk',sans-serif;">00:00:00</div>
-      <div style="display:flex; gap:8px; margin-top:auto;">
-        <button id="mini-voice-btn" onclick="toggleVoice(); updateMiniMode();" style="flex:1; padding:10px; border-radius:10px; border:1px solid var(--line); background:var(--bg-elev); color:var(--text); font-weight:700; cursor:pointer;">Micro</button>
-        <button id="mini-stop-btn" onclick="stopTaskByVoice()" style="flex:1; padding:10px; border-radius:10px; border:none; background:var(--red); color:#fff; font-weight:700; cursor:pointer;">Parar</button>
-      </div>
+      <button id="mini-stop-btn" onclick="stopTaskByVoice()" style="margin-top:auto; padding:10px; border-radius:10px; border:none; background:var(--red); color:#fff; font-weight:700; cursor:pointer;">Parar</button>
     </div>
   `;
 
+  miniWin.document.getElementById("mini-voice-btn").addEventListener("click", ()=>{
+    toggleVoice();
+    updateMiniMode();
+  });
+
+  hideMainWindow();
   updateMiniMode();
   clearInterval(miniInterval);
   miniInterval = setInterval(updateMiniMode, 1000);
@@ -1337,27 +1364,25 @@ async function toggleMiniMode(){
     clearInterval(miniInterval);
     miniInterval = null;
     miniWin = null;
+    showMainWindow();
   });
 }
 
 function updateMiniMode(){
   if(!miniWin) return;
   const doc = miniWin.document;
-  const dot = doc.getElementById("mini-dot");
   const status = doc.getElementById("mini-status");
   const taskEl = doc.getElementById("mini-task");
   const timerEl = doc.getElementById("mini-timer");
   const voiceBtn = doc.getElementById("mini-voice-btn");
-  if(!dot) return;
+  if(!status) return;
 
-  if(voiceOn){
-    dot.style.background = "#ff2b1f";
-    status.textContent = "Escuchando \"ECO\"";
-  } else {
-    dot.style.background = "var(--text-dim)";
-    status.textContent = "Micro apagado";
+  if(voiceBtn){
+    voiceBtn.classList.toggle("listening", voiceOn);
+    // encendido: solo un punto/círculo rojo, sin icono, para que se vea de un vistazo
+    voiceBtn.innerHTML = voiceOn ? "" : MINI_VOICE_ICON_SVG;
   }
-  if(voiceBtn) voiceBtn.textContent = voiceOn ? "Apagar micro" : "Encender micro";
+  status.textContent = voiceOn ? 'Escuchando "ECO"' : "Micro apagado";
 
   if(state.active){
     const t = state.tasks.find(x=>x.id===state.active.taskId);
