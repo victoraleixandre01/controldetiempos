@@ -1323,7 +1323,7 @@ async function toggleMiniMode(){
     return;
   }
   try{
-    miniWin = await documentPictureInPicture.requestWindow({width: 300, height: 210});
+    miniWin = await documentPictureInPicture.requestWindow({width: 300, height: 260});
   }catch(e){
     showToast("No se pudo abrir el modo mini");
     return;
@@ -1346,6 +1346,7 @@ async function toggleMiniMode(){
       </div>
       <div id="mini-task" style="font-size:19px; font-weight:700; line-height:1.2; text-transform:uppercase; font-family:'Space Grotesk',sans-serif;">Sin actividad</div>
       <div id="mini-timer" style="font-size:34px; font-weight:700; font-family:'Space Grotesk',sans-serif;">00:00:00</div>
+      <div id="mini-tasks" style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin;"></div>
       <button id="mini-stop-btn" onclick="stopTaskByVoice()" style="margin-top:auto; padding:10px; border-radius:10px; border:none; background:var(--red); color:#fff; font-weight:700; cursor:pointer;">Parar</button>
     </div>
   `;
@@ -1355,6 +1356,7 @@ async function toggleMiniMode(){
     updateMiniMode();
   });
 
+  renderMiniTasks();
   hideMainWindow();
   updateMiniMode();
   clearInterval(miniInterval);
@@ -1366,6 +1368,40 @@ async function toggleMiniMode(){
     miniWin = null;
     showMainWindow();
   });
+}
+
+// Palabra clave corta a partir del nombre de la tarea (para que quepa en
+// el carrusel de la ventanita mini): coge la última palabra significativa
+const MINI_TASK_STOPWORDS = ["de","del","la","el","los","las","en","con","para","y","a","al","un","una"];
+function miniTaskKeyword(label){
+  const words = label.trim().split(/\s+/).filter(w => w.length>2 && !MINI_TASK_STOPWORDS.includes(w.toLowerCase()));
+  const word = words.length ? words[words.length-1] : label.split(/\s+/)[0];
+  return word.length>12 ? word.slice(0,11)+"…" : word;
+}
+
+function renderMiniTasks(){
+  if(!miniWin) return;
+  const box = miniWin.document.getElementById("mini-tasks");
+  if(!box) return;
+  box.innerHTML = "";
+  visibleTasks().forEach(t=>{
+    const chip = miniWin.document.createElement("button");
+    chip.dataset.taskId = t.id;
+    chip.title = t.label;
+    chip.style.cssText = "display:flex; align-items:center; gap:5px; flex-shrink:0; padding:6px 10px; border-radius:20px; border:1px solid var(--line); background:var(--bg-elev); color:var(--text); font-size:11px; font-weight:700; text-transform:uppercase; white-space:nowrap; cursor:pointer;";
+    chip.innerHTML = `<span style="width:8px; height:8px; border-radius:50%; background:${t.color}; flex-shrink:0;"></span>${miniTaskKeyword(t.label)}`;
+    chip.addEventListener("click", ()=>switchTaskFromMini(t.id));
+    box.appendChild(chip);
+  });
+}
+
+async function switchTaskFromMini(taskId){
+  const t = state.tasks.find(x=>x.id===taskId);
+  if(!t) return;
+  if(state.active && state.active.taskId===taskId) return; // ya está en marcha
+  await startTaskByVoice(t);
+  playTaskChime();
+  updateMiniMode();
 }
 
 function updateMiniMode(){
@@ -1392,6 +1428,12 @@ function updateMiniMode(){
     taskEl.textContent = "Sin actividad";
     timerEl.textContent = "00:00:00";
   }
+
+  doc.querySelectorAll("#mini-tasks button").forEach(chip=>{
+    const active = state.active && chip.dataset.taskId === state.active.taskId;
+    chip.style.borderColor = active ? "var(--red)" : "var(--line)";
+    chip.style.boxShadow = active ? "0 0 0 1px var(--red)" : "none";
+  });
 }
 
 
