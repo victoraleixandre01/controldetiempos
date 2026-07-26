@@ -1302,7 +1302,14 @@ function fmtHM(secs){
   const m = Math.round((secs%3600)/60);
   return `${h}h ${m}m`;
 }
-function dayKey(d){ return d.toISOString().slice(0,10); }
+function dayKey(d){
+  // Usamos los componentes locales (no toISOString, que es UTC) para que
+  // el cambio de día ocurra a medianoche real, no a la 1-2 de la madrugada.
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
 function capitalize(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
 
 let toastTimer;
