@@ -1137,8 +1137,25 @@ function handleVoiceTranscript(raw){
     }
     return;
   }
-  const command = norm.slice(wakeIdx + matched.length).trim();
-  const rawCommand = raw.slice(wakeIdx + matched.length).trim();
+  let command = norm.slice(wakeIdx + matched.length).trim();
+  let rawCommand = raw.slice(wakeIdx + matched.length).trim();
+  // por si se repite "eco" (p.ej. porque no sabías si te había oído la
+  // primera vez), quitamos también cualquier "eco" sueltos al principio
+  // del propio comando, no solo el primero
+  let strippedMore = true;
+  while(strippedMore){
+    strippedMore = false;
+    for(const w of WAKE_WORDS){
+      if(command === w || command.startsWith(w + " ") || command.startsWith(w + ",")){
+        let cut = w.length;
+        while(cut < command.length && /[\s,]/.test(command[cut])) cut++;
+        command = command.slice(cut).trim();
+        rawCommand = rawCommand.slice(cut).trim();
+        strippedMore = true;
+        break;
+      }
+    }
+  }
   flashHeard();
   playListeningChime();
   if(!command){
