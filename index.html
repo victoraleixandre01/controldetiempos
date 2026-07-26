@@ -100,13 +100,15 @@
     transition:box-shadow .6s ease-out, background .15s ease, color .15s ease;
   }
   .logout-btn{width:46px; height:46px; background:color-mix(in srgb, var(--danger) 16%, var(--bg-elev)); border-color:color-mix(in srgb, var(--danger) 55%, var(--line)); color:var(--danger);}
-  @media (max-width:400px){
-    .mini-logo{height:56px;}
-    .avatar{width:44px; height:44px; font-size:18px;}
-    .who-name{font-size:18px;}
-    .who-sub{font-size:12px;}
-    .icon-btn{width:36px; height:36px; font-size:14px;}
-    .logout-btn{width:40px; height:40px;}
+  @media (max-width:480px){
+    .topbar-grid{gap:6px;}
+    .who{gap:8px;}
+    .mini-logo{height:48px;}
+    .avatar{width:40px; height:40px; font-size:16px;}
+    .who-name{font-size:16px;}
+    .who-sub{font-size:11px;}
+    .icon-btn{width:34px; height:34px; font-size:13px;}
+    .logout-btn{width:36px; height:36px;}
   }
   .topbar-title{display:flex; align-items:center; gap:10px;}
 
@@ -883,6 +885,8 @@ const VOICE_STOP_WORDS = ["para la tarea", "detener", "deten", "pausa", "alto", 
 const VOICE_START_WORDS = ["enciende", "empieza", "empezar", "activa", "inicia", "pon"];
 
 let recognition = null;
+let awaitingCommand = false;
+let awaitingTimer = null;
 let voiceOn = false;
 
 function normalizeText(s){
@@ -965,11 +969,33 @@ function handleVoiceTranscript(raw){
     const idx = norm.indexOf(w);
     if(idx !== -1){ matched = w; wakeIdx = idx; break; }
   }
-  if(wakeIdx === -1) return; // no se dijo la palabra de activación, se ignora
+  if(wakeIdx === -1){
+    // no se dijo la palabra de activación en este trozo: si veníamos de un
+    // "te escucho" reciente (pausa tras la palabra de activación), tratamos
+    // esto como el comando que faltaba
+    if(awaitingCommand){
+      clearAwaiting();
+      flashHeard();
+      handleVoiceCommand(norm);
+    }
+    return;
+  }
   flashHeard();
   const command = norm.slice(wakeIdx + matched.length).trim();
-  if(!command){ voiceFeedback("Te escucho"); return; }
+  if(!command){ voiceFeedback("Te escucho"); setAwaiting(); return; }
+  clearAwaiting();
   handleVoiceCommand(command);
+}
+
+function setAwaiting(){
+  awaitingCommand = true;
+  clearTimeout(awaitingTimer);
+  awaitingTimer = setTimeout(()=>{ awaitingCommand = false; }, 6000);
+}
+
+function clearAwaiting(){
+  awaitingCommand = false;
+  clearTimeout(awaitingTimer);
 }
 
 function flashHeard(){
