@@ -271,6 +271,9 @@
         </div>
       </div>
       <div class="topbar-actions" style="display:flex; gap:8px;">
+        <button class="icon-btn" id="mini-btn" onclick="toggleMiniMode()" title="Modo mini (ventana flotante)">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="11" width="8" height="6" rx="1" fill="currentColor"/></svg>
+        </button>
         <button class="icon-btn voice-btn" id="voice-btn" onclick="toggleVoice()" title="Control por voz">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
@@ -278,6 +281,7 @@
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </button>
       </div>
+    
     </div>
 
     <div class="spotlight idle" id="spotlight">
@@ -1272,6 +1276,94 @@ function toggleVoice(){
     saveLocal("voiceAutoStart", false); // lo apagaste a propósito, no debe reactivarse solo
   } else {
     startVoice();
+  }
+}
+
+
+/* ---------------- Modo mini (ventana flotante siempre visible) ---------------- */
+// Usa la API de "Picture-in-Picture de documento" de Chrome de escritorio:
+// abre una ventanita flotante, siempre por encima de las demás, que
+// comparte el mismo contexto de JS que la pestaña (así el micro y la voz
+// siguen funcionando exactamente igual dentro de ella).
+let miniWin = null;
+let miniInterval = null;
+
+function supportsMiniMode(){
+  return "documentPictureInPicture" in window;
+}
+
+async function toggleMiniMode(){
+  if(miniWin){ miniWin.close(); return; }
+  if(!supportsMiniMode()){
+    showToast("El modo mini solo está disponible en Chrome de escritorio");
+    return;
+  }
+  try{
+    miniWin = await documentPictureInPicture.requestWindow({width: 300, height: 190});
+  }catch(e){
+    showToast("No se pudo abrir el modo mini");
+    return;
+  }
+
+  // copiamos los estilos de la app tal cual, para reutilizar las mismas clases
+  document.querySelectorAll("style").forEach(styleEl=>{
+    miniWin.document.head.appendChild(styleEl.cloneNode(true));
+  });
+
+  miniWin.document.body.style.margin = "0";
+  miniWin.document.body.style.background = "var(--bg)";
+  miniWin.document.body.innerHTML = `
+    <div style="padding:14px; font-family:'Space Grotesk',sans-serif; color:var(--text); display:flex; flex-direction:column; gap:8px; height:100%; box-sizing:border-box;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span id="mini-dot" style="width:10px; height:10px; border-radius:50%; background:var(--text-dim); flex-shrink:0;"></span>
+        <span id="mini-status" style="font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.08em;">Micro apagado</span>
+      </div>
+      <div id="mini-task" style="font-size:19px; font-weight:700; line-height:1.2;">Sin actividad</div>
+      <div id="mini-timer" style="font-size:34px; font-weight:700; font-family:'Space Grotesk',sans-serif;">00:00:00</div>
+      <div style="display:flex; gap:8px; margin-top:auto;">
+        <button id="mini-voice-btn" onclick="toggleVoice(); updateMiniMode();" style="flex:1; padding:10px; border-radius:10px; border:1px solid var(--line); background:var(--bg-elev); color:var(--text); font-weight:700; cursor:pointer;">Micro</button>
+        <button id="mini-stop-btn" onclick="stopTaskByVoice()" style="flex:1; padding:10px; border-radius:10px; border:none; background:var(--red); color:#fff; font-weight:700; cursor:pointer;">Parar</button>
+      </div>
+    </div>
+  `;
+
+  updateMiniMode();
+  clearInterval(miniInterval);
+  miniInterval = setInterval(updateMiniMode, 1000);
+
+  miniWin.addEventListener("pagehide", ()=>{
+    clearInterval(miniInterval);
+    miniInterval = null;
+    miniWin = null;
+  });
+}
+
+function updateMiniMode(){
+  if(!miniWin) return;
+  const doc = miniWin.document;
+  const dot = doc.getElementById("mini-dot");
+  const status = doc.getElementById("mini-status");
+  const taskEl = doc.getElementById("mini-task");
+  const timerEl = doc.getElementById("mini-timer");
+  const voiceBtn = doc.getElementById("mini-voice-btn");
+  if(!dot) return;
+
+  if(voiceOn){
+    dot.style.background = "#ff2b1f";
+    status.textContent = "Escuchando \"ECO\"";
+  } else {
+    dot.style.background = "var(--text-dim)";
+    status.textContent = "Micro apagado";
+  }
+  if(voiceBtn) voiceBtn.textContent = voiceOn ? "Apagar micro" : "Encender micro";
+
+  if(state.active){
+    const t = state.tasks.find(x=>x.id===state.active.taskId);
+    taskEl.textContent = t ? t.label : "Tarea en curso";
+    timerEl.textContent = fmtHMS(todayTotalForTask(state.active.taskId));
+  } else {
+    taskEl.textContent = "Sin actividad";
+    timerEl.textContent = "00:00:00";
   }
 }
 
