@@ -394,6 +394,18 @@
   </div>
 </div>
 
+<div class="modal-bg" id="voice-confirm-modal">
+  <div class="modal">
+    <h3 style="font-size:18px;">Tarea no encontrada</h3>
+    <p id="voice-confirm-text" style="color:var(--text); font-size:15px; margin:10px 0 4px; line-height:1.4;"></p>
+    <p style="color:var(--text-dim); font-size:12px; margin:4px 0 4px;">Puedes tocar un botón o decir "sí" / "no" en voz alta.</p>
+    <div class="modal-actions">
+      <button onclick="resolvePendingConfirm(false)">No</button>
+      <button class="primary" onclick="resolvePendingConfirm(true)">Sí, añadir</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* =========================================================================
    CONFIGURACIÓN DE FIREBASE (Realtime Database)
@@ -994,7 +1006,7 @@ async function stopTaskByVoice(){
   }
 }
 
-async function handleVoiceCommand(command){
+async function handleVoiceCommand(command, rawCommand){
   if(!command){ voiceFeedback("No te he entendido, inténtalo de nuevo"); return; }
 
   // "cambio" o "cambia" solos (sin destino) = solo parar, como "para"
@@ -1005,8 +1017,13 @@ async function handleVoiceCommand(command){
   }
 
   let taskPhrase = command;
+  let rawTaskPhrase = (rawCommand || command).trim();
   for(const w of VOICE_SWITCH_PREFIXES){
-    if(command.startsWith(w)){ taskPhrase = command.slice(w.length).trim(); break; }
+    if(command.startsWith(w)){
+      taskPhrase = command.slice(w.length).trim();
+      rawTaskPhrase = rawTaskPhrase.slice(w.length).trim();
+      break;
+    }
   }
   const match = findTaskByVoice(taskPhrase);
   if(match){
@@ -1017,13 +1034,74 @@ async function handleVoiceCommand(command){
       playTaskChime();
       voiceFeedback("Iniciando " + match.label);
     }
+  } else if(taskPhrase){
+    askCreateTask(rawTaskPhrase || taskPhrase);
   } else {
     voiceFeedback("No he encontrado esa tarea");
   }
 }
 
+// ---- Crear tarea nueva por voz cuando no se encuentra ----
+let pendingConfirmLabel = null;
+let pendingConfirmTimer = null;
+
+function niceLabel(text){
+  const lower = text.trim().toLowerCase();
+  return lower ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower;
+}
+
+function askCreateTask(rawPhrase){
+  const label = niceLabel(rawPhrase);
+  pendingConfirmLabel = label;
+  document.getElementById("voice-confirm-text").textContent =
+    `La tarea "${label}" no existe. ¿La añado?`;
+  document.getElementById("voice-confirm-modal").classList.add("show");
+  voiceFeedback(`La tarea ${label} no existe, ¿la añado?`);
+  clearTimeout(pendingConfirmTimer);
+  pendingConfirmTimer = setTimeout(()=>{ closePendingConfirm(); }, 9000);
+}
+
+function closePendingConfirm(){
+  pendingConfirmLabel = null;
+  clearTimeout(pendingConfirmTimer);
+  document.getElementById("voice-confirm-modal").classList.remove("show");
+}
+
+async function resolvePendingConfirm(yes){
+  const label = pendingConfirmLabel;
+  if(!label) return;
+  closePendingConfirm();
+  if(!yes){
+    voiceFeedback("Vale, no la añado");
+    return;
+  }
+  await createTaskByVoice(label);
+}
+
+async function createTaskByVoice(label){
+  const id = "custom_" + normalizeText(label).replace(/[^a-z0-9]+/g,"_").slice(0,24) + "_" + Date.now().toString(36).slice(-4);
+  const color = nextTaskColor();
+  const newTask = {id, label, color, scope:"all"};
+  state.tasks.push(newTask);
+  await cloudSet("/config/tasks", state.tasks);
+  saveLocal("tasks", state.tasks);
+  renderHome();
+  await startTaskByVoice(newTask);
+  playTaskChime();
+  voiceFeedback(label + " añadida y en marcha");
+}
+
 function handleVoiceTranscript(raw){
+
   const norm = normalizeText(raw);
+
+  // Si hay una pregunta de "¿la añado?" pendiente, un simple sí/no
+  // responde directamente, sin necesidad de decir "eco"
+  if(pendingConfirmLabel){
+    if(/\bsi\b/.test(norm)){ resolvePendingConfirm(true); return; }
+    if(/\bno\b/.test(norm)){ resolvePendingConfirm(false); return; }
+  }
+
   let matched = null, wakeIdx = -1;
   for(const w of WAKE_WORDS){
     const idx = norm.indexOf(w);
@@ -1036,11 +1114,12 @@ function handleVoiceTranscript(raw){
     if(awaitingCommand){
       clearAwaiting();
       setTimeout(unflashHeard, 400);
-      handleVoiceCommand(norm);
+      handleVoiceCommand(norm, raw);
     }
     return;
   }
   const command = norm.slice(wakeIdx + matched.length).trim();
+  const rawCommand = raw.slice(wakeIdx + matched.length).trim();
   flashHeard();
   playListeningChime();
   if(!command){
@@ -1050,7 +1129,7 @@ function handleVoiceTranscript(raw){
   }
   clearAwaiting();
   setTimeout(unflashHeard, 400);
-  handleVoiceCommand(command);
+  handleVoiceCommand(command, rawCommand);
 }
 
 function setAwaiting(){
