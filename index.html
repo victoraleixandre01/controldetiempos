@@ -1323,7 +1323,7 @@ async function toggleMiniMode(){
     return;
   }
   try{
-    miniWin = await documentPictureInPicture.requestWindow({width: 300, height: 260});
+    miniWin = await documentPictureInPicture.requestWindow({width: 360, height: 175});
   }catch(e){
     showToast("No se pudo abrir el modo mini");
     return;
@@ -1337,23 +1337,26 @@ async function toggleMiniMode(){
   miniWin.document.body.style.margin = "0";
   miniWin.document.body.style.background = "var(--bg)";
   miniWin.document.body.innerHTML = `
-    <div style="padding:14px; font-family:'Space Grotesk',sans-serif; color:var(--text); display:flex; flex-direction:column; gap:10px; height:100%; box-sizing:border-box;">
+    <div style="padding:12px 14px; font-family:'Space Grotesk',sans-serif; color:var(--text); display:flex; flex-direction:column; gap:8px; height:100%; box-sizing:border-box;">
       <div style="display:flex; align-items:center; gap:10px;">
         <button id="mini-voice-btn" class="icon-btn voice-btn" title="Control por voz" style="flex-shrink:0;">
           ${MINI_VOICE_ICON_SVG}
         </button>
         <span id="mini-status" style="font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.08em;">Micro apagado</span>
+        <button id="mini-stop-btn" style="margin-left:auto; padding:5px 12px; border-radius:8px; border:1px solid color-mix(in srgb, var(--danger) 50%, var(--line)); background:color-mix(in srgb, var(--danger) 16%, var(--bg-elev)); color:var(--danger); font-size:11px; font-weight:800; font-family:'Space Grotesk',sans-serif; text-transform:uppercase; letter-spacing:.03em; cursor:pointer;">Parar</button>
       </div>
-      <div id="mini-task" style="font-size:19px; font-weight:700; line-height:1.2; text-transform:uppercase; font-family:'Space Grotesk',sans-serif;">Sin actividad</div>
-      <div id="mini-timer" style="font-size:34px; font-weight:700; font-family:'Space Grotesk',sans-serif;">00:00:00</div>
-      <div id="mini-tasks" style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin;"></div>
-      <button id="mini-stop-btn" onclick="stopTaskByVoice()" style="margin-top:auto; padding:10px; border-radius:10px; border:none; background:var(--red); color:#fff; font-weight:700; cursor:pointer;">Parar</button>
+      <div id="mini-task" style="font-size:17px; font-weight:700; line-height:1.15; text-transform:uppercase; font-family:'Space Grotesk',sans-serif;">Sin actividad</div>
+      <div id="mini-timer" style="font-size:28px; font-weight:700; font-family:'Space Grotesk',sans-serif;">00:00:00</div>
+      <div id="mini-tasks" style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin; margin-top:auto;"></div>
     </div>
   `;
 
   miniWin.document.getElementById("mini-voice-btn").addEventListener("click", ()=>{
     toggleVoice();
     updateMiniMode();
+  });
+  miniWin.document.getElementById("mini-stop-btn").addEventListener("click", ()=>{
+    stopTaskByVoice();
   });
 
   renderMiniTasks();
