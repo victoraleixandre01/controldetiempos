@@ -395,13 +395,14 @@
 </div>
 
 <div class="modal-bg" id="voice-confirm-modal">
-  <div class="modal">
-    <h3 style="font-size:18px;">Tarea no encontrada</h3>
-    <p id="voice-confirm-text" style="color:var(--text); font-size:15px; margin:10px 0 4px; line-height:1.4;"></p>
-    <p style="color:var(--text-dim); font-size:12px; margin:4px 0 4px;">Puedes tocar un botón o decir "sí" / "no" en voz alta.</p>
-    <div class="modal-actions">
-      <button onclick="resolvePendingConfirm(false)">No</button>
-      <button class="primary" onclick="resolvePendingConfirm(true)">Sí, añadir</button>
+  <div class="modal" style="text-align:center;">
+    <div style="font-size:40px; margin-bottom:6px;">🎙️</div>
+    <h3 style="font-size:22px;">Tarea no encontrada</h3>
+    <p id="voice-confirm-text" style="color:var(--text); font-size:24px; font-weight:700; margin:12px 0 8px; line-height:1.35;"></p>
+    <p style="color:var(--text-dim); font-size:14px; margin:4px 0 4px;">Di "sí" o "no" en voz alta, o toca un botón.</p>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button style="flex:1; padding:16px; font-size:17px;" onclick="resolvePendingConfirm(false)">No</button>
+      <button class="primary" style="flex:1; padding:16px; font-size:17px;" onclick="resolvePendingConfirm(true)">Sí, añadir</button>
     </div>
   </div>
 </div>
@@ -552,9 +553,24 @@ async function login(empId){
     renderHome();
     goScreen("home");
     startTicker();
+    maybeAutoStartVoice();
   }catch(err){
     showError("Fallo al entrar: " + err.message);
   }
+}
+
+// Si el micro ya se activó alguna vez y el navegador todavía tiene el
+// permiso concedido, lo reanudamos solos sin que haga falta tocar nada.
+async function maybeAutoStartVoice(){
+  try{
+    if(!supportsVoice()) return;
+    if(loadLocal("voiceAutoStart", false) !== true) return;
+    if(navigator.permissions && navigator.permissions.query){
+      const status = await navigator.permissions.query({name:"microphone"});
+      if(status.state !== "granted") return;
+    }
+    startVoice();
+  }catch(e){ /* si algo falla, simplemente no arranca solo */ }
 }
 
 async function logout(){
@@ -927,8 +943,11 @@ function supportsVoice(){
 function voiceFeedback(text){
   showToast(text);
   try{
+    speechSynthesis.cancel(); // evita que una frase se quede en cola sin sonar
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "es-ES";
+    u.rate = 1;
+    u.volume = 1;
     speechSynthesis.speak(u);
   }catch(e){ /* sin síntesis de voz disponible, no pasa nada */ }
 }
@@ -1174,6 +1193,7 @@ function startVoice(){
     if(e.error === "not-allowed" || e.error === "service-not-allowed"){
       showToast("Permiso de micrófono denegado");
       voiceOn = false;
+      saveLocal("voiceAutoStart", false);
       updateVoiceBtn();
     }
     // otros errores (p.ej. 'no-speech') se ignoran, sigue escuchando
@@ -1186,6 +1206,7 @@ function startVoice(){
   try{
     recognition.start();
     voiceOn = true;
+    saveLocal("voiceAutoStart", true);
     updateVoiceBtn();
     showToast('Escuchando: di "ECO" y una orden');
   }catch(e){
@@ -1206,7 +1227,12 @@ function toggleVoice(){
     showToast("Tu navegador no soporta el control por voz (usa Chrome)");
     return;
   }
-  if(voiceOn) stopVoice(); else startVoice();
+  if(voiceOn){
+    stopVoice();
+    saveLocal("voiceAutoStart", false); // lo apagaste a propósito, no debe reactivarse solo
+  } else {
+    startVoice();
+  }
 }
 
 
