@@ -953,6 +953,8 @@ function supportsVoice(){
   return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 }
 
+let ttsSpeaking = false;
+
 function voiceFeedback(text){
   showToast(text);
   try{
@@ -961,6 +963,13 @@ function voiceFeedback(text){
     u.lang = "es-ES";
     u.rate = 1;
     u.volume = 1;
+    ttsSpeaking = true;
+    const clear = () => { ttsSpeaking = false; };
+    u.onend = clear;
+    u.onerror = clear;
+    // por si el evento de "ha terminado de hablar" no llega (pasa a veces
+    // en Android), nos aseguramos de no quedarnos sordos para siempre
+    setTimeout(clear, Math.max(2500, text.length * 90));
     speechSynthesis.speak(u);
   }catch(e){ /* sin síntesis de voz disponible, no pasa nada */ }
 }
@@ -1216,6 +1225,7 @@ function startVoice(){
   recognition.continuous = true;
   recognition.interimResults = false;
   recognition.onresult = (e)=>{
+    if(ttsSpeaking) return; // evita que se escuche a sí mismo mientras habla
     const res = e.results[e.results.length-1];
     if(res.isFinal) handleVoiceTranscript(res[0].transcript);
   };
