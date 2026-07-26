@@ -80,8 +80,10 @@
 
   /* ---------- TOPBAR ---------- */
   .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:22px;}
-  .topbar-grid{position:relative; display:flex; align-items:center; justify-content:space-between; gap:14px;}
-  .who{display:flex; align-items:center; gap:12px; justify-content:center; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);}
+  .topbar-grid{display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; column-gap:6px;}
+  .mini-logo{justify-self:start;}
+  .topbar-actions{justify-self:end;}
+  .who{display:flex; align-items:center; gap:12px; justify-self:center; min-width:0;}
   .mini-logo{height:88px; width:auto; flex-shrink:0;}
   .avatar{width:52px;height:52px;border-radius:50%;background:var(--red);color:#ffffff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px;font-family:'Space Grotesk',sans-serif; flex-shrink:0;}
   .who-info{text-align:center;}
@@ -264,7 +266,7 @@
           <div class="who-sub" id="home-date">—</div>
         </div>
       </div>
-      <div style="display:flex; gap:8px;">
+      <div class="topbar-actions" style="display:flex; gap:8px;">
         <button class="icon-btn voice-btn" id="voice-btn" onclick="toggleVoice()" title="Control por voz">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
@@ -880,13 +882,14 @@ async function confirmAddTask(){
 
 
 /* ---------------- Control por voz ---------------- */
-const WAKE_WORDS = ["oye control", "ey control", "eh control", "hey control", "oye, control"];
+// Modelo "toca y habla": cada vez que se pulsa el micro se abre una única
+// escucha (sin palabra de activación ni escucha continua). Esto es mucho
+// más fiable en iPhone/Safari, donde la escucha continua con reinicios
+// automáticos no funciona bien.
 const VOICE_STOP_WORDS = ["para la tarea", "detener", "deten", "pausa", "alto", "stop", "para"];
 const VOICE_START_WORDS = ["enciende", "empieza", "empezar", "activa", "inicia", "pon"];
 
 let recognition = null;
-let awaitingCommand = false;
-let awaitingTimer = null;
 let voiceOn = false;
 
 function normalizeText(s){
@@ -934,6 +937,7 @@ async function startTaskByVoice(task){
 }
 
 async function handleVoiceCommand(command){
+  if(!command){ voiceFeedback("No te he entendido, inténtalo de nuevo"); return; }
   if(VOICE_STOP_WORDS.some(w => command.includes(w))){
     if(state.active){
       const t = state.tasks.find(x=>x.id===state.active.taskId);
@@ -962,42 +966,6 @@ async function handleVoiceCommand(command){
   }
 }
 
-function handleVoiceTranscript(raw){
-  const norm = normalizeText(raw);
-  let matched = null, wakeIdx = -1;
-  for(const w of WAKE_WORDS){
-    const idx = norm.indexOf(w);
-    if(idx !== -1){ matched = w; wakeIdx = idx; break; }
-  }
-  if(wakeIdx === -1){
-    // no se dijo la palabra de activación en este trozo: si veníamos de un
-    // "te escucho" reciente (pausa tras la palabra de activación), tratamos
-    // esto como el comando que faltaba
-    if(awaitingCommand){
-      clearAwaiting();
-      flashHeard();
-      handleVoiceCommand(norm);
-    }
-    return;
-  }
-  flashHeard();
-  const command = norm.slice(wakeIdx + matched.length).trim();
-  if(!command){ voiceFeedback("Te escucho"); setAwaiting(); return; }
-  clearAwaiting();
-  handleVoiceCommand(command);
-}
-
-function setAwaiting(){
-  awaitingCommand = true;
-  clearTimeout(awaitingTimer);
-  awaitingTimer = setTimeout(()=>{ awaitingCommand = false; }, 6000);
-}
-
-function clearAwaiting(){
-  awaitingCommand = false;
-  clearTimeout(awaitingTimer);
-}
-
 function flashHeard(){
   const btn = document.getElementById("voice-btn");
   if(!btn) return;
@@ -1014,30 +982,31 @@ function startVoice(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
   recognition.lang = "es-ES";
-  recognition.continuous = true;
+  recognition.continuous = false;    // una sola orden por cada toque del micro
   recognition.interimResults = false;
   recognition.onresult = (e)=>{
     const res = e.results[e.results.length-1];
-    if(res.isFinal) handleVoiceTranscript(res[0].transcript);
+    if(res.isFinal){
+      flashHeard();
+      handleVoiceCommand(normalizeText(res[0].transcript));
+    }
   };
   recognition.onerror = (e)=>{
     if(e.error === "not-allowed" || e.error === "service-not-allowed"){
       showToast("Permiso de micrófono denegado");
-      voiceOn = false;
-      updateVoiceBtn();
+    } else if(e.error !== "no-speech" && e.error !== "aborted"){
+      showToast("No te he entendido, inténtalo de nuevo");
     }
-    // otros errores (p.ej. 'no-speech') se ignoran, sigue escuchando
   };
   recognition.onend = ()=>{
-    if(voiceOn){
-      try{ recognition.start(); }catch(e){ /* ya estaba iniciado */ }
-    }
+    voiceOn = false;
+    updateVoiceBtn();
   };
   try{
     recognition.start();
     voiceOn = true;
     updateVoiceBtn();
-    showToast('Escuchando: di "oye control" (o "ey control") y una orden');
+    showToast("Escuchando... di el nombre de la tarea");
   }catch(e){
     showToast("No se pudo iniciar el micrófono");
   }
