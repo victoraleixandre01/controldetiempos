@@ -921,22 +921,32 @@ function voiceFeedback(text){
   }catch(e){ /* sin síntesis de voz disponible, no pasa nada */ }
 }
 
-function playListeningChime(){
+function playTone(freqs, dur){
   try{
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(660, ctx.currentTime);
-    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.09);
-    gain.gain.setValueAtTime(0.001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.24);
+    const step = dur / freqs.length;
+    freqs.forEach((f, i)=>{
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      const t0 = ctx.currentTime + i*step;
+      osc.frequency.setValueAtTime(f, t0);
+      gain.gain.setValueAtTime(0.001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.2, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + step*0.9);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + step);
+    });
   }catch(e){ /* sin audio disponible, no pasa nada */ }
 }
+
+// Sonido corto al oír "ECO": confirma que te está escuchando
+function playListeningChime(){ playTone([660, 880], 0.22); }
+
+// Sonido distinto al cambiar/iniciar/parar una tarea: confirma sin mirar
+// la pantalla que la orden se ha ejecutado
+function playTaskChime(){ playTone([784, 1047], 0.24); }
 
 function resolveAlias(phrase){
   const words = phrase.split(/\s+/);
@@ -977,6 +987,7 @@ async function stopTaskByVoice(){
   if(state.active){
     const t = state.tasks.find(x=>x.id===state.active.taskId);
     await stopCurrent();
+    playTaskChime();
     voiceFeedback("Tarea terminada" + (t ? ": " + t.label : ""));
   } else {
     voiceFeedback("No había ninguna tarea en marcha");
@@ -1003,6 +1014,7 @@ async function handleVoiceCommand(command){
       voiceFeedback(match.label + " ya está en marcha");
     } else {
       await startTaskByVoice(match);
+      playTaskChime();
       voiceFeedback("Iniciando " + match.label);
     }
   } else {
@@ -1023,19 +1035,21 @@ function handleVoiceTranscript(raw){
     // el comando que faltaba
     if(awaitingCommand){
       clearAwaiting();
+      setTimeout(unflashHeard, 400);
       handleVoiceCommand(norm);
     }
     return;
   }
   const command = norm.slice(wakeIdx + matched.length).trim();
+  flashHeard();
+  playListeningChime();
   if(!command){
-    flashHeard();
-    playListeningChime();
     voiceFeedback("Te escucho");
     setAwaiting();
     return;
   }
   clearAwaiting();
+  setTimeout(unflashHeard, 400);
   handleVoiceCommand(command);
 }
 
@@ -1050,7 +1064,6 @@ function setAwaiting(){
 function clearAwaiting(){
   awaitingCommand = false;
   clearTimeout(awaitingTimer);
-  unflashHeard();
 }
 
 function flashHeard(){
@@ -1104,6 +1117,7 @@ function startVoice(){
 function stopVoice(){
   voiceOn = false;
   clearAwaiting();
+  unflashHeard();
   if(recognition){ try{ recognition.stop(); }catch(e){} }
   updateVoiceBtn();
 }
