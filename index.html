@@ -882,14 +882,16 @@ async function confirmAddTask(){
 
 
 /* ---------------- Control por voz ---------------- */
-// Modelo "toca y habla": cada vez que se pulsa el micro se abre una única
-// escucha (sin palabra de activación ni escucha continua). Esto es mucho
-// más fiable en iPhone/Safari, donde la escucha continua con reinicios
-// automáticos no funciona bien.
+// Escucha continua con palabra de activación: hay que decir "ECO" antes de
+// cada orden. Nota: la escucha continua es menos fiable en iPhone/Safari
+// que en Chrome/Android.
+const WAKE_WORDS = ["eco"];
 const VOICE_STOP_WORDS = ["para la tarea", "detener", "deten", "pausa", "alto", "stop", "para"];
 const VOICE_START_WORDS = ["enciende", "empieza", "empezar", "activa", "inicia", "pon"];
 
 let recognition = null;
+let awaitingCommand = false;
+let awaitingTimer = null;
 let voiceOn = false;
 
 function normalizeText(s){
@@ -966,6 +968,42 @@ async function handleVoiceCommand(command){
   }
 }
 
+function handleVoiceTranscript(raw){
+  const norm = normalizeText(raw);
+  let matched = null, wakeIdx = -1;
+  for(const w of WAKE_WORDS){
+    const idx = norm.indexOf(w);
+    if(idx !== -1){ matched = w; wakeIdx = idx; break; }
+  }
+  if(wakeIdx === -1){
+    // no se dijo "eco" en este trozo: si veníamos de un "te escucho"
+    // reciente (pausa tras la palabra de activación), tratamos esto como
+    // el comando que faltaba
+    if(awaitingCommand){
+      clearAwaiting();
+      flashHeard();
+      handleVoiceCommand(norm);
+    }
+    return;
+  }
+  flashHeard();
+  const command = norm.slice(wakeIdx + matched.length).trim();
+  if(!command){ voiceFeedback("Te escucho"); setAwaiting(); return; }
+  clearAwaiting();
+  handleVoiceCommand(command);
+}
+
+function setAwaiting(){
+  awaitingCommand = true;
+  clearTimeout(awaitingTimer);
+  awaitingTimer = setTimeout(()=>{ awaitingCommand = false; }, 6000);
+}
+
+function clearAwaiting(){
+  awaitingCommand = false;
+  clearTimeout(awaitingTimer);
+}
+
 function flashHeard(){
   const btn = document.getElementById("voice-btn");
   if(!btn) return;
@@ -982,31 +1020,30 @@ function startVoice(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
   recognition.lang = "es-ES";
-  recognition.continuous = false;    // una sola orden por cada toque del micro
+  recognition.continuous = true;
   recognition.interimResults = false;
   recognition.onresult = (e)=>{
     const res = e.results[e.results.length-1];
-    if(res.isFinal){
-      flashHeard();
-      handleVoiceCommand(normalizeText(res[0].transcript));
-    }
+    if(res.isFinal) handleVoiceTranscript(res[0].transcript);
   };
   recognition.onerror = (e)=>{
     if(e.error === "not-allowed" || e.error === "service-not-allowed"){
       showToast("Permiso de micrófono denegado");
-    } else if(e.error !== "no-speech" && e.error !== "aborted"){
-      showToast("No te he entendido, inténtalo de nuevo");
+      voiceOn = false;
+      updateVoiceBtn();
     }
+    // otros errores (p.ej. 'no-speech') se ignoran, sigue escuchando
   };
   recognition.onend = ()=>{
-    voiceOn = false;
-    updateVoiceBtn();
+    if(voiceOn){
+      try{ recognition.start(); }catch(e){ /* ya estaba iniciado */ }
+    }
   };
   try{
     recognition.start();
     voiceOn = true;
     updateVoiceBtn();
-    showToast("Escuchando... di el nombre de la tarea");
+    showToast('Escuchando: di "ECO" y una orden');
   }catch(e){
     showToast("No se pudo iniciar el micrófono");
   }
